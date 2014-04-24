@@ -1,5 +1,6 @@
 import os
 import unittest
+import tempfile
 from __main__ import vtk, qt, ctk, slicer
 
 #
@@ -8,15 +9,15 @@ from __main__ import vtk, qt, ctk, slicer
 
 class FiducialToImageRegistration:
   def __init__(self, parent):
-    parent.title = "FiducialToImageRegistration" # TODO make this more human readable by adding spaces
-    parent.categories = ["Examples"]
+    parent.title = "Fiducial To Image Registration" # TODO make this more human readable by adding spaces
+    parent.categories = ["Registration"]
     parent.dependencies = []
-    parent.contributors = ["Jean-Christophe Fillion-Robin (Kitware), Steve Pieper (Isomics)"] # replace with "Firstname Lastname (Org)"
+    parent.contributors = ["Laurent Chauvin (BWH), Junichi Tokuda (BWH)"] # replace with "Firstname Lastname (Org)"
     parent.helpText = """
-    This is an example of scripted loadable module bundled in an extension.
+    This module is automatically detecting spherical fiducial and register them to a set of points using an iterative closest point (ICP) registration method.
     """
     parent.acknowledgementText = """
-    This file was originally developed by Jean-Christophe Fillion-Robin, Kitware Inc. and Steve Pieper, Isomics, Inc.  and was partially funded by NIH grant 3P41RR013218-12S1.
+    This file was originally developed by Laurent Chauvin, BWH and Junichi Tokuda, BWH  and was partially funded by NIH grant 3P41RR013218-12S1.
 """ # replace with organization, grant and thanks.
     self.parent = parent
 
@@ -91,53 +92,49 @@ class FiducialToImageRegistrationWidget:
     #
     # input volume selector
     #
-    self.inputSelector = slicer.qMRMLNodeComboBox()
-    self.inputSelector.nodeTypes = ( ("vtkMRMLScalarVolumeNode"), "" )
-    self.inputSelector.addAttribute( "vtkMRMLScalarVolumeNode", "LabelMap", 0 )
-    self.inputSelector.selectNodeUponCreation = True
-    self.inputSelector.addEnabled = False
-    self.inputSelector.removeEnabled = False
-    self.inputSelector.noneEnabled = False
-    self.inputSelector.showHidden = False
-    self.inputSelector.showChildNodeTypes = False
-    self.inputSelector.setMRMLScene( slicer.mrmlScene )
-    self.inputSelector.setToolTip( "Pick the input to the algorithm." )
-    parametersFormLayout.addRow("Input Volume: ", self.inputSelector)
+    self.volumeSelector = slicer.qMRMLNodeComboBox()
+    self.volumeSelector.nodeTypes = ( ("vtkMRMLScalarVolumeNode"), "" )
+    self.volumeSelector.addAttribute( "vtkMRMLScalarVolumeNode", "LabelMap", 0 )
+    self.volumeSelector.selectNodeUponCreation = True
+    self.volumeSelector.addEnabled = False
+    self.volumeSelector.removeEnabled = False
+    self.volumeSelector.noneEnabled = False
+    self.volumeSelector.showHidden = False
+    self.volumeSelector.showChildNodeTypes = False
+    self.volumeSelector.setMRMLScene( slicer.mrmlScene )
+    self.volumeSelector.setToolTip( "Pick the input to the algorithm." )
+    parametersFormLayout.addRow("Input Volume: ", self.volumeSelector)
 
     #
-    # output volume selector
+    # input fiducial list
     #
-    self.outputSelector = slicer.qMRMLNodeComboBox()
-    self.outputSelector.nodeTypes = ( ("vtkMRMLScalarVolumeNode"), "" )
-    self.outputSelector.addAttribute( "vtkMRMLScalarVolumeNode", "LabelMap", 0 )
-    self.outputSelector.selectNodeUponCreation = False
-    self.outputSelector.addEnabled = True
-    self.outputSelector.removeEnabled = True
-    self.outputSelector.noneEnabled = False
-    self.outputSelector.showHidden = False
-    self.outputSelector.showChildNodeTypes = False
-    self.outputSelector.setMRMLScene( slicer.mrmlScene )
-    self.outputSelector.setToolTip( "Pick the output to the algorithm." )
-    parametersFormLayout.addRow("Output Volume: ", self.outputSelector)
+    self.fiducialSelector = slicer.qMRMLNodeComboBox()
+    self.fiducialSelector.nodeTypes = ( ("vtkMRMLMarkupsFiducialNode"), "" )
+    self.fiducialSelector.selectNodeUponCreation = False
+    self.fiducialSelector.addEnabled = False
+    self.fiducialSelector.removeEnabled = False
+    self.fiducialSelector.noneEnabled = False
+    self.fiducialSelector.showHidden = False
+    self.fiducialSelector.showChildNodeTypes = False
+    self.fiducialSelector.setMRMLScene( slicer.mrmlScene )
+    self.fiducialSelector.setToolTip( "Pick the input to the algorithm." )
+    parametersFormLayout.addRow("Input Fiducials: ", self.fiducialSelector)
 
     #
-    # check box to trigger taking screen shots for later use in tutorials
+    # output transform selector
     #
-    self.enableScreenshotsFlagCheckBox = qt.QCheckBox()
-    self.enableScreenshotsFlagCheckBox.checked = 0
-    self.enableScreenshotsFlagCheckBox.setToolTip("If checked, take screen shots for tutorials. Use Save Data to write them to disk.")
-    parametersFormLayout.addRow("Enable Screenshots", self.enableScreenshotsFlagCheckBox)
-
-    #
-    # scale factor for screen shots
-    #
-    self.screenshotScaleFactorSliderWidget = ctk.ctkSliderWidget()
-    self.screenshotScaleFactorSliderWidget.singleStep = 1.0
-    self.screenshotScaleFactorSliderWidget.minimum = 1.0
-    self.screenshotScaleFactorSliderWidget.maximum = 50.0
-    self.screenshotScaleFactorSliderWidget.value = 1.0
-    self.screenshotScaleFactorSliderWidget.setToolTip("Set scale factor for the screen shots.")
-    parametersFormLayout.addRow("Screenshot scale factor", self.screenshotScaleFactorSliderWidget)
+    self.transformSelector = slicer.qMRMLNodeComboBox()
+    self.transformSelector.nodeTypes = ( ("vtkMRMLLinearTransformNode"), "" )
+    self.transformSelector.selectNodeUponCreation = True
+    self.transformSelector.addEnabled = True
+    self.transformSelector.removeEnabled = True
+    self.transformSelector.renameEnabled = True
+    self.transformSelector.noneEnabled = False
+    self.transformSelector.showHidden = False
+    self.transformSelector.showChildNodeTypes = False
+    self.transformSelector.setMRMLScene( slicer.mrmlScene )
+    self.transformSelector.setToolTip( "Pick the output to the algorithm." )
+    parametersFormLayout.addRow("Output Transform: ", self.transformSelector)
 
     #
     # Apply Button
@@ -149,8 +146,9 @@ class FiducialToImageRegistrationWidget:
 
     # connections
     self.applyButton.connect('clicked(bool)', self.onApplyButton)
-    self.inputSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.onSelect)
-    self.outputSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.onSelect)
+    self.volumeSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.onSelect)
+    self.fiducialSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.onSelect)
+    self.transformSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.onSelect)
 
     # Add vertical spacer
     self.layout.addStretch(1)
@@ -159,14 +157,12 @@ class FiducialToImageRegistrationWidget:
     pass
 
   def onSelect(self):
-    self.applyButton.enabled = self.inputSelector.currentNode() and self.outputSelector.currentNode()
+    self.applyButton.enabled = self.volumeSelector.currentNode() and self.transformSelector.currentNode() and self.fiducialSelector.currentNode()
 
   def onApplyButton(self):
     logic = FiducialToImageRegistrationLogic()
-    enableScreenshotsFlag = self.enableScreenshotsFlagCheckBox.checked
-    screenshotScaleFactor = int(self.screenshotScaleFactorSliderWidget.value)
     print("Run the algorithm")
-    logic.run(self.inputSelector.currentNode(), self.outputSelector.currentNode(), enableScreenshotsFlag,screenshotScaleFactor)
+    logic.run(self.volumeSelector.currentNode(), self.fiducialSelector.currentNode(), self.transformSelector.currentNode())
 
   def onReload(self,moduleName="FiducialToImageRegistration"):
     """Generic reload method for any scripted module.
@@ -227,55 +223,67 @@ class FiducialToImageRegistrationLogic:
     qt.QTimer.singleShot(msec, self.info.close)
     self.info.exec_()
 
-  def takeScreenshot(self,name,description,type=-1):
-    # show the message even if not taking a screen shot
-    self.delayDisplay(description)
-
-    if self.enableScreenshots == 0:
-      return
-
-    lm = slicer.app.layoutManager()
-    # switch on the type to get the requested window
-    widget = 0
-    if type == -1:
-      # full window
-      widget = slicer.util.mainWindow()
-    elif type == slicer.qMRMLScreenShotDialog().FullLayout:
-      # full layout
-      widget = lm.viewport()
-    elif type == slicer.qMRMLScreenShotDialog().ThreeD:
-      # just the 3D window
-      widget = lm.threeDWidget(0).threeDView()
-    elif type == slicer.qMRMLScreenShotDialog().Red:
-      # red slice window
-      widget = lm.sliceWidget("Red")
-    elif type == slicer.qMRMLScreenShotDialog().Yellow:
-      # yellow slice window
-      widget = lm.sliceWidget("Yellow")
-    elif type == slicer.qMRMLScreenShotDialog().Green:
-      # green slice window
-      widget = lm.sliceWidget("Green")
-
-    # grab and convert to vtk image data
-    qpixMap = qt.QPixmap().grabWidget(widget)
-    qimage = qpixMap.toImage()
-    imageData = vtk.vtkImageData()
-    slicer.qMRMLUtils().qImageToVtkImageData(qimage,imageData)
-
-    annotationLogic = slicer.modules.annotations.logic()
-    annotationLogic.CreateSnapShot(name, description, type, self.screenshotScaleFactor, imageData)
-
-  def run(self,inputVolume,outputVolume,enableScreenshots=0,screenshotScaleFactor=1):
+  def run(self,iVolume,iFiducial,oTransform):
     """
     Run the actual algorithm
     """
 
     self.delayDisplay('Running the aglorithm')
 
-    self.enableScreenshots = enableScreenshots
-    self.screenshotScaleFactor = screenshotScaleFactor
+    # Get CLI modules
+    fiducialDetectionCLI = slicer.modules.sphericalfiducialdetection
+    icpRegistrationCLI = slicer.modules.icpregistration
 
-    self.takeScreenshot('FiducialToImageRegistration-Start','Start',-1)
+    # Create temporary filename to store detected fiducials
+    tmpFile = tempfile.NamedTemporaryFile()
+    tmpFileName = tmpFile.name + ".fcsv"
+    
+    # Call fiducial detection
+    detectionParameters = {}
+    detectionParameters["inputVolume"] = iVolume.GetID()
+    detectionParameters["outputFile"] = tmpFileName
+    detectionParameters["threshold"] = 0.0
+    detectionParameters["numberOfSpheres"] = 8
+    detectionParameters["sigmaGrad"] = 1.0
+    detectionParameters["gradThreshold"] = 0.1
+    detectionParameters["minRadius"] = 5.0
+    detectionParameters["maxRadius"] = 5.0
+    detectionParameters["variance"] = 1.0
+    detectionParameters["outputThreshold"] = 0.5
+    detectionParameters["sphereRadiusRatio"] = 1.0
+
+    detectionParameters["alpha"] = 0.8
+    detectionParameters["beta"] = 0.8
+    detectionParameters["gamme"] = 0.8
+
+    detectionParameters["minSigma"] = 3.0
+    detectionParameters["maxSigma"] = 3.0
+    detectionParameters["stepSigma"] = 1.0
+    
+    detectionParameters["debugSwitch"] = 0
+    
+    slicer.cli.run(fiducialDetectionCLI, None, detectionParameters, True)
+
+    # Import fiducials in slicer scene
+    detectedFiducialNode = slicer.mrmlScene.CreateNodeByClass('vtkMRMLMarkupsFiducialNode')
+    slicer.mrmlScene.AddNode(detectedFiducialNode)
+    (success, detectedFiducialNode) = slicer.util.loadMarkupsFiducialList(tmpFileName, True)
+    detectedFiducialNode.SetName("SphericalFiducialDetected")
+
+    # ICP Registration
+    registrationParameters = {}
+    registrationParameters["movingPoints"] = iFiducial.GetID()
+    registrationParameters["fixedPoints"] = detectedFiducialNode.GetID()
+    registrationParameters["registrationTransform"] = oTransform.GetID()
+
+    registrationParameters["iterations"] = 2000
+    registrationParameters["gradientTolerance"] = 0.0001
+    registrationParameters["valueTolerance"] = 0.0001
+    registrationParameters["epsilonFunction"] = 0.00001
+
+    slicer.cli.run(icpRegistrationCLI, None, registrationParameters, True)
+
+    print('Finished')
 
     return True
 
