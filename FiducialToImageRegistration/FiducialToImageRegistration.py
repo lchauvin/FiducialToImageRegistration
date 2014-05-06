@@ -243,7 +243,7 @@ class FiducialToImageRegistrationLogic:
     detectionParameters["inputVolume"] = iVolume.GetID()
     detectionParameters["outputFile"] = tmpFileName
     detectionParameters["threshold"] = 0.0
-    detectionParameters["numberOfSpheres"] = 8
+    detectionParameters["numberOfSpheres"] = iFiducial.GetNumberOfFiducials()
     detectionParameters["sigmaGrad"] = 1.0
     detectionParameters["gradThreshold"] = 0.1
     detectionParameters["minRadius"] = 5.0
