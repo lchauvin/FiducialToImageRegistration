@@ -265,10 +265,8 @@ class FiducialToImageRegistrationLogic:
     slicer.cli.run(fiducialDetectionCLI, None, detectionParameters, True)
 
     # Import fiducials in slicer scene
-    detectedFiducialNode = slicer.mrmlScene.CreateNodeByClass('vtkMRMLMarkupsFiducialNode')
-    slicer.mrmlScene.AddNode(detectedFiducialNode)
     (success, detectedFiducialNode) = slicer.util.loadMarkupsFiducialList(tmpFileName, True)
-    detectedFiducialNode.SetName("SphericalFiducialDetected")
+    detectedFiducialNode.SetName(slicer.mrmlScene.GenerateUniqueName('SphericalFiducialsDetected'))
 
     # ICP Registration
     registrationParameters = {}
