@@ -137,6 +137,15 @@ class FiducialToImageRegistrationWidget:
     parametersFormLayout.addRow("Output Transform: ", self.transformSelector)
 
     #
+    # registration error
+    #
+    self.registrationError = ctk.ctkDoubleSpinBox()
+    self.registrationError.setToolTip("Registration Error")
+    self.registrationError.minimum = 0
+    self.registrationError.maximum = 1000
+    parametersFormLayout.addRow("Registration Error: ", self.registrationError)
+
+    #
     # Apply Button
     #
     self.applyButton = qt.QPushButton("Apply")
@@ -162,7 +171,7 @@ class FiducialToImageRegistrationWidget:
   def onApplyButton(self):
     logic = FiducialToImageRegistrationLogic()
     print("Run the algorithm")
-    logic.run(self.volumeSelector.currentNode(), self.fiducialSelector.currentNode(), self.transformSelector.currentNode())
+    logic.run(self.volumeSelector.currentNode(), self.fiducialSelector.currentNode(), self.transformSelector.currentNode(), self.registrationError)
 
   def onReload(self,moduleName="FiducialToImageRegistration"):
     """Generic reload method for any scripted module.
@@ -223,7 +232,7 @@ class FiducialToImageRegistrationLogic:
     qt.QTimer.singleShot(msec, self.info.close)
     self.info.exec_()
 
-  def run(self,iVolume,iFiducial,oTransform):
+  def run(self,iVolume,iFiducial,oTransform, registrationErrorWidget):
     """
     Run the actual algorithm
     """
@@ -269,6 +278,7 @@ class FiducialToImageRegistrationLogic:
     detectedFiducialNode.SetName(slicer.mrmlScene.GenerateUniqueName('SphericalFiducialsDetected'))
 
     # ICP Registration
+    icpRegistrationError = 0.0
     registrationParameters = {}
     registrationParameters["movingPoints"] = iFiducial.GetID()
     registrationParameters["fixedPoints"] = detectedFiducialNode.GetID()
@@ -279,7 +289,9 @@ class FiducialToImageRegistrationLogic:
     registrationParameters["valueTolerance"] = 0.0001
     registrationParameters["epsilonFunction"] = 0.00001
 
-    slicer.cli.run(icpRegistrationCLI, None, registrationParameters, True)
+    cliNode = slicer.cli.run(icpRegistrationCLI, None, registrationParameters, True)
+
+    registrationErrorWidget.setValue(float(cliNode.GetParameterDefault(0,4)))
 
     print('Finished')
 
