@@ -171,7 +171,7 @@ class FiducialToImageRegistrationWidget:
   def onApplyButton(self):
     logic = FiducialToImageRegistrationLogic()
     print("Run the algorithm")
-    logic.run(self.volumeSelector.currentNode(), self.fiducialSelector.currentNode(), self.transformSelector.currentNode(), self.registrationError)
+    logic.run(self.volumeSelector.currentNodeID, self.fiducialSelector.currentNodeID, self.transformSelector.currentNodeID, self.registrationError)
 
   def onReload(self,moduleName="FiducialToImageRegistration"):
     """Generic reload method for any scripted module.
@@ -232,7 +232,7 @@ class FiducialToImageRegistrationLogic:
     qt.QTimer.singleShot(msec, self.info.close)
     self.info.exec_()
 
-  def run(self,iVolume,iFiducial,oTransform, registrationErrorWidget):
+  def run(self,iVolume,iFiducial,oTransform,registrationErrorWidget=None):
     """
     Run the actual algorithm
     """
@@ -247,12 +247,15 @@ class FiducialToImageRegistrationLogic:
     tmpFile = tempfile.NamedTemporaryFile()
     tmpFileName = tmpFile.name + ".fcsv"
     
+    # Get nodes
+    fiducialNode = slicer.mrmlScene.GetNodeByID(iFiducial)
+
     # Call fiducial detection
     detectionParameters = {}
-    detectionParameters["inputVolume"] = iVolume.GetID()
+    detectionParameters["inputVolume"] = iVolume
     detectionParameters["outputFile"] = tmpFileName
     detectionParameters["threshold"] = 0.0
-    detectionParameters["numberOfSpheres"] = iFiducial.GetNumberOfFiducials()
+    detectionParameters["numberOfSpheres"] = fiducialNode.GetNumberOfFiducials()
     detectionParameters["sigmaGrad"] = 1.0
     detectionParameters["gradThreshold"] = 0.1
     detectionParameters["minRadius"] = 5.0
@@ -263,7 +266,7 @@ class FiducialToImageRegistrationLogic:
 
     detectionParameters["alpha"] = 0.8
     detectionParameters["beta"] = 0.8
-    detectionParameters["gamme"] = 0.8
+    detectionParameters["gamma"] = 0.8
 
     detectionParameters["minSigma"] = 3.0
     detectionParameters["maxSigma"] = 3.0
@@ -280,9 +283,9 @@ class FiducialToImageRegistrationLogic:
     # ICP Registration
     icpRegistrationError = 0.0
     registrationParameters = {}
-    registrationParameters["movingPoints"] = iFiducial.GetID()
+    registrationParameters["movingPoints"] = iFiducial
     registrationParameters["fixedPoints"] = detectedFiducialNode.GetID()
-    registrationParameters["registrationTransform"] = oTransform.GetID()
+    registrationParameters["registrationTransform"] = oTransform
 
     registrationParameters["iterations"] = 2000
     registrationParameters["gradientTolerance"] = 0.0001
@@ -291,7 +294,8 @@ class FiducialToImageRegistrationLogic:
 
     cliNode = slicer.cli.run(icpRegistrationCLI, None, registrationParameters, True)
 
-    registrationErrorWidget.setValue(float(cliNode.GetParameterDefault(0,4)))
+    if registrationErrorWidget:
+      registrationErrorWidget.setValue(float(cliNode.GetParameterDefault(0,4)))
 
     print('Finished')
 
