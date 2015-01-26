@@ -1,6 +1,7 @@
 import os
 import unittest
 import tempfile
+import math
 from __main__ import vtk, qt, ctk, slicer
 
 #
@@ -279,6 +280,49 @@ class FiducialToImageRegistrationLogic:
     # Import fiducials in slicer scene
     (success, detectedFiducialNode) = slicer.util.loadMarkupsFiducialList(tmpFileName, True)
     detectedFiducialNode.SetName(slicer.mrmlScene.GenerateUniqueName('SphericalFiducialsDetected'))
+
+    # Cluster detection
+    clusterMassCenter = {}
+    fiducialPosition = [0.0, 0.0, 0.0]
+    mathDist = vtk.vtkMath()
+    distanceThreshold = 30
+
+    for pt in range(detectedFiducialNode.GetNumberOfFiducials()):
+      belongToExistingCluster = False
+      detectedFiducialNode.GetNthFiducialPosition(pt,fiducialPosition)
+
+      print "Fiducial" + str(pt) + ": " + str(fiducialPosition)
+      print "Number of Clusters: " + str(len(clusterMassCenter))
+
+      # Compute distance from fiducial to all cluster center of mass
+      for cluster in range(len(clusterMassCenter)):
+        print "Cluster Position: " + str(clusterMassCenter[cluster])
+        dist = math.sqrt(mathDist.Distance2BetweenPoints(clusterMassCenter[cluster],fiducialPosition))
+        print "Distance Fiducial -> Cluster: " + str(dist)
+        if dist < distanceThreshold:
+          print "Fiducial" + str(pt) + " belong to cluster" + str(cluster)
+          # Fiducial belong to current cluster. Update center of mass.
+          print "Previous Center of Mass" + str(clusterMassCenter[cluster])
+          clusterMassCenter[cluster] = [(clusterMassCenter[cluster][0]+fiducialPosition[0])/2,
+                                        (clusterMassCenter[cluster][1]+fiducialPosition[1])/2,
+                                        (clusterMassCenter[cluster][2]+fiducialPosition[2])/2]
+          print "New Center of Mass: " + str(clusterMassCenter[cluster])
+          print "belongToExistingCluster: True"
+
+          belongToExistingCluster = True
+          break
+
+      if not belongToExistingCluster:
+        print "Fiducial" + str(pt) + " does not belong to any cluster"
+        print "Create new one: cluster" + str(len(clusterMassCenter))
+        # Fiducial does not belong to any current cluster. Create a new one.
+        clusterMassCenter[len(clusterMassCenter)] = [fiducialPosition[0], fiducialPosition[1], fiducialPosition[2]]
+        print "New cluster Center of Mass: " + str(clusterMassCenter[len(clusterMassCenter)-1]) + "\n"
+
+    for i in range(len(clusterMassCenter)):
+      print "Cluster " + str(i) + ": " + str(clusterMassCenter[i])
+
+    # Rigid Registration
 
     # ICP Registration
     icpRegistrationError = 0.0
