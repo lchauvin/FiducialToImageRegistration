@@ -283,46 +283,56 @@ class FiducialToImageRegistrationLogic:
 
     # Cluster detection
     clusterMassCenter = {}
+    sortedClusterMassCenter = {}
+    clusterFiducials = {}
     fiducialPosition = [0.0, 0.0, 0.0]
+    clusterPointPosition = [0.0, 0.0, 0.0]
     mathDist = vtk.vtkMath()
-    distanceThreshold = 30
+    distanceThreshold = 40
 
     for pt in range(detectedFiducialNode.GetNumberOfFiducials()):
       belongToExistingCluster = False
       detectedFiducialNode.GetNthFiducialPosition(pt,fiducialPosition)
 
-      print "Fiducial" + str(pt) + ": " + str(fiducialPosition)
-      print "Number of Clusters: " + str(len(clusterMassCenter))
+      # Compute distance from fiducial to the first point of all clusters
+      for cluster in range(len(clusterFiducials)):
+        detectedFiducialNode.GetNthFiducialPosition(clusterFiducials[cluster][0],clusterPointPosition)
+        dist = math.sqrt(mathDist.Distance2BetweenPoints(clusterPointPosition,fiducialPosition))
 
-      # Compute distance from fiducial to all cluster center of mass
-      for cluster in range(len(clusterMassCenter)):
-        print "Cluster Position: " + str(clusterMassCenter[cluster])
-        dist = math.sqrt(mathDist.Distance2BetweenPoints(clusterMassCenter[cluster],fiducialPosition))
-        print "Distance Fiducial -> Cluster: " + str(dist)
+        # Fiducial belong to current cluster. Add it to the list of point of the current cluster.
         if dist < distanceThreshold:
-          print "Fiducial" + str(pt) + " belong to cluster" + str(cluster)
-          # Fiducial belong to current cluster. Update center of mass.
-          print "Previous Center of Mass" + str(clusterMassCenter[cluster])
-          clusterMassCenter[cluster] = [(clusterMassCenter[cluster][0]+fiducialPosition[0])/2,
-                                        (clusterMassCenter[cluster][1]+fiducialPosition[1])/2,
-                                        (clusterMassCenter[cluster][2]+fiducialPosition[2])/2]
-          print "New Center of Mass: " + str(clusterMassCenter[cluster])
-          print "belongToExistingCluster: True"
-
+          clusterFiducials[cluster].append(pt);
           belongToExistingCluster = True
           break
 
+      # Fiducial does not belong to any cluster. Create a new one.
       if not belongToExistingCluster:
-        print "Fiducial" + str(pt) + " does not belong to any cluster"
-        print "Create new one: cluster" + str(len(clusterMassCenter))
-        # Fiducial does not belong to any current cluster. Create a new one.
-        clusterMassCenter[len(clusterMassCenter)] = [fiducialPosition[0], fiducialPosition[1], fiducialPosition[2]]
-        print "New cluster Center of Mass: " + str(clusterMassCenter[len(clusterMassCenter)-1]) + "\n"
+        clusterFiducials[len(clusterFiducials)] = [pt]
 
-    for i in range(len(clusterMassCenter)):
-      print "Cluster " + str(i) + ": " + str(clusterMassCenter[i])
+    # Compute center of mass of each cluster
+    for cluster in range(len(clusterFiducials)):
+      centerOfMass = [0.0, 0.0, 0.0]
+      for pts in range(len(clusterFiducials[cluster])):
+        tmpPos = [0.0, 0.0, 0.0]
+        detectedFiducialNode.GetNthFiducialPosition(clusterFiducials[cluster][pts],tmpPos)
+        centerOfMass[0] = centerOfMass[0] + tmpPos[0]
+        centerOfMass[1] = centerOfMass[1] + tmpPos[1]
+        centerOfMass[2] = centerOfMass[2] + tmpPos[2]
 
+      centerOfMass[0] = centerOfMass[0] / len(clusterFiducials[cluster])
+      centerOfMass[1] = centerOfMass[1] / len(clusterFiducials[cluster])
+      centerOfMass[2] = centerOfMass[2] / len(clusterFiducials[cluster])
+
+      clusterMassCenter[cluster] = [centerOfMass[0], centerOfMass[1], centerOfMass[2]]
+
+    # Order cluster list by number of fiducials in it
+    sortedClusters = sorted(clusterFiducials, key=lambda i: int(len(clusterFiducials[i])))
+    for cluster in range(len(clusterMassCenter)):
+      sortedClusterMassCenter[cluster] = [clusterMassCenter[sortedClusters[cluster]][0],
+                                          clusterMassCenter[sortedClusters[cluster]][1],
+                                          clusterMassCenter[sortedClusters[cluster]][2]]
     # Rigid Registration
+
 
     # ICP Registration
     icpRegistrationError = 0.0
