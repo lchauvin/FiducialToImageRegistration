@@ -233,6 +233,61 @@ class FiducialToImageRegistrationLogic:
     qt.QTimer.singleShot(msec, self.info.close)
     self.info.exec_()
 
+  def getClustersCenterOfMass(self,fiducialList,sortClusters=False):
+    clusterMassCenter = {}
+    sortedClusterMassCenter = {}
+    clusterFiducials = {}
+    fiducialPosition = [0.0, 0.0, 0.0]
+    clusterPointPosition = [0.0, 0.0, 0.0]
+    mathDist = vtk.vtkMath()
+    distanceThreshold = 40
+
+    for pt in range(fiducialList.GetNumberOfFiducials()):
+      belongToExistingCluster = False
+      fiducialList.GetNthFiducialPosition(pt,fiducialPosition)
+
+      # Compute distance from fiducial to the first point of all clusters
+      for cluster in range(len(clusterFiducials)):
+        fiducialList.GetNthFiducialPosition(clusterFiducials[cluster][0],clusterPointPosition)
+        dist = math.sqrt(mathDist.Distance2BetweenPoints(clusterPointPosition,fiducialPosition))
+
+        # Fiducial belong to current cluster. Add it to the list of point of the current cluster.
+        if dist < distanceThreshold:
+          clusterFiducials[cluster].append(pt);
+          belongToExistingCluster = True
+          break
+
+      # Fiducial does not belong to any cluster. Create a new one.
+      if not belongToExistingCluster:
+        clusterFiducials[len(clusterFiducials)] = [pt]
+
+    # Compute center of mass of each cluster
+    for cluster in range(len(clusterFiducials)):
+      centerOfMass = [0.0, 0.0, 0.0]
+      for pts in range(len(clusterFiducials[cluster])):
+        tmpPos = [0.0, 0.0, 0.0]
+        fiducialList.GetNthFiducialPosition(clusterFiducials[cluster][pts],tmpPos)
+        centerOfMass[0] = centerOfMass[0] + tmpPos[0]
+        centerOfMass[1] = centerOfMass[1] + tmpPos[1]
+        centerOfMass[2] = centerOfMass[2] + tmpPos[2]
+
+      centerOfMass[0] = centerOfMass[0] / len(clusterFiducials[cluster])
+      centerOfMass[1] = centerOfMass[1] / len(clusterFiducials[cluster])
+      centerOfMass[2] = centerOfMass[2] / len(clusterFiducials[cluster])
+
+      clusterMassCenter[cluster] = [centerOfMass[0], centerOfMass[1], centerOfMass[2]]
+
+    # Order cluster list by number of fiducials in it
+    if sortClusters:
+      sortedClusters = sorted(clusterFiducials, key=lambda i: int(len(clusterFiducials[i])))
+      for cluster in range(len(clusterMassCenter)):
+        sortedClusterMassCenter[cluster] = [clusterMassCenter[sortedClusters[cluster]][0],
+                                            clusterMassCenter[sortedClusters[cluster]][1],
+                                            clusterMassCenter[sortedClusters[cluster]][2]]
+      return sortedClusterMassCenter
+
+    return clusterMassCenter
+
   def run(self,iVolume,iFiducial,oTransform,registrationErrorWidget=None):
     """
     Run the actual algorithm
@@ -243,6 +298,7 @@ class FiducialToImageRegistrationLogic:
     # Get CLI modules
     fiducialDetectionCLI = slicer.modules.sphericalfiducialdetection
     icpRegistrationCLI = slicer.modules.icpregistration
+    rigidRegistrationCLI = slicer.modules.fiducialregistration
 
     # Create temporary filename to store detected fiducials
     tmpFile = tempfile.NamedTemporaryFile()
@@ -282,63 +338,46 @@ class FiducialToImageRegistrationLogic:
     detectedFiducialNode.SetName(slicer.mrmlScene.GenerateUniqueName('SphericalFiducialsDetected'))
 
     # Cluster detection
-    clusterMassCenter = {}
-    sortedClusterMassCenter = {}
-    clusterFiducials = {}
-    fiducialPosition = [0.0, 0.0, 0.0]
-    clusterPointPosition = [0.0, 0.0, 0.0]
-    mathDist = vtk.vtkMath()
-    distanceThreshold = 40
+    sortedClusters = self.getClustersCenterOfMass(detectedFiducialNode, True)
+    fiducialClusters = self.getClustersCenterOfMass(fiducialNode, True)
 
-    for pt in range(detectedFiducialNode.GetNumberOfFiducials()):
-      belongToExistingCluster = False
-      detectedFiducialNode.GetNthFiducialPosition(pt,fiducialPosition)
+    # Create Markups list of clusters center of mass
+    detectedClustersList = slicer.mrmlScene.CreateNodeByClass("vtkMRMLMarkupsFiducialNode")
+    fiducialClustersList = slicer.mrmlScene.CreateNodeByClass("vtkMRMLMarkupsFiducialNode")
 
-      # Compute distance from fiducial to the first point of all clusters
-      for cluster in range(len(clusterFiducials)):
-        detectedFiducialNode.GetNthFiducialPosition(clusterFiducials[cluster][0],clusterPointPosition)
-        dist = math.sqrt(mathDist.Distance2BetweenPoints(clusterPointPosition,fiducialPosition))
+    if len(sortedClusters) == len(fiducialClusters):
+      for i in range(len(sortedClusters)):
+        detectedClustersList.AddFiducial(sortedClusters[i][0],
+                                         sortedClusters[i][1],
+                                         sortedClusters[i][2])
+        fiducialClustersList.AddFiducial(fiducialClusters[i][0],
+                                         fiducialClusters[i][1],
+                                         fiducialClusters[i][2])
 
-        # Fiducial belong to current cluster. Add it to the list of point of the current cluster.
-        if dist < distanceThreshold:
-          clusterFiducials[cluster].append(pt);
-          belongToExistingCluster = True
-          break
+      detectedClustersList.HideFromEditorsOn()
+      fiducialClustersList.HideFromEditorsOn()
 
-      # Fiducial does not belong to any cluster. Create a new one.
-      if not belongToExistingCluster:
-        clusterFiducials[len(clusterFiducials)] = [pt]
+      slicer.mrmlScene.AddNode(detectedClustersList)
+      slicer.mrmlScene.AddNode(fiducialClustersList)
 
-    # Compute center of mass of each cluster
-    for cluster in range(len(clusterFiducials)):
-      centerOfMass = [0.0, 0.0, 0.0]
-      for pts in range(len(clusterFiducials[cluster])):
-        tmpPos = [0.0, 0.0, 0.0]
-        detectedFiducialNode.GetNthFiducialPosition(clusterFiducials[cluster][pts],tmpPos)
-        centerOfMass[0] = centerOfMass[0] + tmpPos[0]
-        centerOfMass[1] = centerOfMass[1] + tmpPos[1]
-        centerOfMass[2] = centerOfMass[2] + tmpPos[2]
-
-      centerOfMass[0] = centerOfMass[0] / len(clusterFiducials[cluster])
-      centerOfMass[1] = centerOfMass[1] / len(clusterFiducials[cluster])
-      centerOfMass[2] = centerOfMass[2] / len(clusterFiducials[cluster])
-
-      clusterMassCenter[cluster] = [centerOfMass[0], centerOfMass[1], centerOfMass[2]]
-
-    # Order cluster list by number of fiducials in it
-    sortedClusters = sorted(clusterFiducials, key=lambda i: int(len(clusterFiducials[i])))
-    for cluster in range(len(clusterMassCenter)):
-      sortedClusterMassCenter[cluster] = [clusterMassCenter[sortedClusters[cluster]][0],
-                                          clusterMassCenter[sortedClusters[cluster]][1],
-                                          clusterMassCenter[sortedClusters[cluster]][2]]
     # Rigid Registration
+    rigidRegistrationTransform = slicer.mrmlScene.CreateNodeByClass("vtkMRMLLinearTransformNode")
+    rigidRegistrationTransform.HideFromEditorsOn()
+    slicer.mrmlScene.AddNode(rigidRegistrationTransform)
 
+    rigidRegistrationParameters = {}
+    rigidRegistrationParameters["fixedLandmarks"] = detectedClustersList.GetID()
+    rigidRegistrationParameters["movingLandmarks"] = fiducialClustersList.GetID()
+    rigidRegistrationParameters["saveTransform"] = rigidRegistrationTransform.GetID()
 
-    # ICP Registration
+    cliNode = slicer.cli.run(rigidRegistrationCLI, None, rigidRegistrationParameters, True)
+
+     # ICP Registration
     icpRegistrationError = 0.0
     registrationParameters = {}
     registrationParameters["movingPoints"] = iFiducial
     registrationParameters["fixedPoints"] = detectedFiducialNode.GetID()
+    registrationParameters["initialTransform"] = rigidRegistrationTransform.GetID()
     registrationParameters["registrationTransform"] = oTransform
 
     registrationParameters["iterations"] = 2000
@@ -350,6 +389,11 @@ class FiducialToImageRegistrationLogic:
 
     if registrationErrorWidget:
       registrationErrorWidget.setValue(float(cliNode.GetParameterDefault(0,4)))
+
+    # Cleanup
+    slicer.mrmlScene.RemoveNode(detectedClustersList)
+    slicer.mrmlScene.RemoveNode(fiducialClustersList)
+    slicer.mrmlScene.RemoveNode(rigidRegistrationTransform)
 
     print('Finished')
 
