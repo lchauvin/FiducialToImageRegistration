@@ -288,7 +288,7 @@ class FiducialToImageRegistrationLogic:
 
     return clusterMassCenter
 
-  def run(self,iVolume,iFiducial,oTransform,registrationErrorWidget=None):
+  def run(self,volume,fiducialList,outputTransform,registrationErrorWidget=None):
     """
     Run the actual algorithm
     """
@@ -301,16 +301,15 @@ class FiducialToImageRegistrationLogic:
     rigidRegistrationCLI = slicer.modules.fiducialregistration
 
     # Create temporary filename to store detected fiducials
-    tmpFile = tempfile.NamedTemporaryFile()
-    tmpFileName = tmpFile.name + ".fcsv"
+    tmpImageFiducialFilename = tempfile.NamedTemporaryFile().name + ".fcsv"
     
     # Get nodes
-    fiducialNode = slicer.mrmlScene.GetNodeByID(iFiducial)
+    fiducialNode = slicer.mrmlScene.GetNodeByID(fiducialList)
 
     # Call fiducial detection
     detectionParameters = {}
-    detectionParameters["inputVolume"] = iVolume
-    detectionParameters["outputFile"] = tmpFileName
+    detectionParameters["inputVolume"] = volume
+    detectionParameters["outputFile"] = tmpImageFiducialFilename
     detectionParameters["threshold"] = 0.0
     detectionParameters["numberOfSpheres"] = fiducialNode.GetNumberOfFiducials()
     detectionParameters["sigmaGrad"] = 1.0
@@ -334,30 +333,30 @@ class FiducialToImageRegistrationLogic:
     slicer.cli.run(fiducialDetectionCLI, None, detectionParameters, True)
 
     # Import fiducials in slicer scene
-    (success, detectedFiducialNode) = slicer.util.loadMarkupsFiducialList(tmpFileName, True)
-    detectedFiducialNode.SetName(slicer.mrmlScene.GenerateUniqueName('SphericalFiducialsDetected'))
+    (success, imageFiducialNode) = slicer.util.loadMarkupsFiducialList(tmpImageFiducialFilename, True)
+    imageFiducialNode.SetName(slicer.mrmlScene.GenerateUniqueName('ImageFiducialsDetected'))
 
     # Cluster detection
-    sortedClusters = self.getClustersCenterOfMass(detectedFiducialNode, True)
-    fiducialClusters = self.getClustersCenterOfMass(fiducialNode, True)
+    sortedImageFiducialClusters = self.getClustersCenterOfMass(imageFiducialNode, True)
+    sortedFiducialClusters = self.getClustersCenterOfMass(fiducialNode, True)
 
     # Create Markups list of clusters center of mass
-    detectedClustersList = slicer.mrmlScene.CreateNodeByClass("vtkMRMLMarkupsFiducialNode")
+    imageFiducialClustersList = slicer.mrmlScene.CreateNodeByClass("vtkMRMLMarkupsFiducialNode")
     fiducialClustersList = slicer.mrmlScene.CreateNodeByClass("vtkMRMLMarkupsFiducialNode")
 
-    if len(sortedClusters) == len(fiducialClusters):
-      for i in range(len(sortedClusters)):
-        detectedClustersList.AddFiducial(sortedClusters[i][0],
-                                         sortedClusters[i][1],
-                                         sortedClusters[i][2])
-        fiducialClustersList.AddFiducial(fiducialClusters[i][0],
-                                         fiducialClusters[i][1],
-                                         fiducialClusters[i][2])
+    if len(sortedImageFiducialClusters) == len(sortedFiducialClusters):
+      for i in range(len(sortedImageFiducialClusters)):
+        imageFiducialClustersList.AddFiducial(sortedImageFiducialClusters[i][0],
+                                              sortedImageFiducialClusters[i][1],
+                                              sortedImageFiducialClusters[i][2])
+        fiducialClustersList.AddFiducial(sortedFiducialClusters[i][0],
+                                         sortedFiducialClusters[i][1],
+                                         sortedFiducialClusters[i][2])
 
-      detectedClustersList.HideFromEditorsOn()
+      imageFiducialClustersList.HideFromEditorsOn()
       fiducialClustersList.HideFromEditorsOn()
 
-      slicer.mrmlScene.AddNode(detectedClustersList)
+      slicer.mrmlScene.AddNode(imageFiducialClustersList)
       slicer.mrmlScene.AddNode(fiducialClustersList)
 
     # Rigid Registration
@@ -366,7 +365,7 @@ class FiducialToImageRegistrationLogic:
     slicer.mrmlScene.AddNode(rigidRegistrationTransform)
 
     rigidRegistrationParameters = {}
-    rigidRegistrationParameters["fixedLandmarks"] = detectedClustersList.GetID()
+    rigidRegistrationParameters["fixedLandmarks"] = imageFiducialClustersList.GetID()
     rigidRegistrationParameters["movingLandmarks"] = fiducialClustersList.GetID()
     rigidRegistrationParameters["saveTransform"] = rigidRegistrationTransform.GetID()
 
@@ -375,10 +374,10 @@ class FiducialToImageRegistrationLogic:
      # ICP Registration
     icpRegistrationError = 0.0
     registrationParameters = {}
-    registrationParameters["movingPoints"] = iFiducial
-    registrationParameters["fixedPoints"] = detectedFiducialNode.GetID()
-    registrationParameters["initialTransform"] = rigidRegistrationTransform.GetID()
-    registrationParameters["registrationTransform"] = oTransform
+    registrationParameters["movingPoints"] = fiducialList
+    registrationParameters["fixedPoints"] = imageFiducialNode
+    registrationParameters["initialTransform"] = rigidRegistrationTransform
+    registrationParameters["registrationTransform"] = outputTransform
 
     registrationParameters["iterations"] = 2000
     registrationParameters["gradientTolerance"] = 0.0001
@@ -391,7 +390,7 @@ class FiducialToImageRegistrationLogic:
       registrationErrorWidget.setValue(float(cliNode.GetParameterDefault(0,4)))
 
     # Cleanup
-    slicer.mrmlScene.RemoveNode(detectedClustersList)
+    slicer.mrmlScene.RemoveNode(imageFiducialClustersList)
     slicer.mrmlScene.RemoveNode(fiducialClustersList)
     slicer.mrmlScene.RemoveNode(rigidRegistrationTransform)
 
